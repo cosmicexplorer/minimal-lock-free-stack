@@ -13,5 +13,4 @@ edition = "2021"
 
 
 [dependencies]
-# ointers = { git = "https://github.com/cosmicexplorer/ointers", rev = "1961f75bbb9818d72f59a3601997bf8a34952005" }
-ointers = { path = "/home/cosmicexplorer/tools/ointers" }
+portable-atomic = { version = "1", features = ["require-cas"] }

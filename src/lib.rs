@@ -13,10 +13,6 @@
  * or correctness of the code. */
 // #![warn(missing_docs)]
 
-/* TODO: these can be removed, i guess... */
-#![feature(let_chains)]
-/* Note: run clippy with: rustup run nightly cargo-clippy! */
-#![deny(unsafe_code)]
 /* Ensure any doctest warnings fails the doctest! */
 #![doc(test(attr(deny(warnings))))]
 /* Enable all clippy lints except for many of the pedantic ones. It's a shame this needs to be
@@ -46,17 +42,24 @@
 /* Default isn't as big a deal as people seem to think it is. */
 #![allow(clippy::new_without_default, clippy::new_ret_no_self)]
 
+use portable_atomic::AtomicU128;
+
 pub fn add(left: usize, right: usize) -> usize {
-    left + right
+  left + right
 }
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+  use super::*;
 
-    #[test]
-    fn it_works() {
-        let result = add(2, 2);
-        assert_eq!(result, 4);
-    }
+  #[test]
+  fn it_works() {
+    let result = add(2, 2);
+    assert_eq!(result, 4);
+  }
+
+  #[test]
+  fn check_u128() {
+    assert!(AtomicU128::is_lock_free());
+  }
 }

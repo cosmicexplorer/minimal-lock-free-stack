@@ -6,9 +6,11 @@ version = 3
 name = "minimal-lock-free-stack"
 version = "0.0.0"
 dependencies = [
- "ointers",
+ "portable-atomic",
 ]
 
 [[package]]
-name = "ointers"
-version = "4.0.1"
+name = "portable-atomic"
+version = "1.4.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "31114a898e107c51bb1609ffaf55a0e011cf6a4d7f1170d0015a165082c0338b"
