@@ -1,0 +1,17 @@
+[package]
+name = "minimal-lock-free-stack"
+version = "0.0.0"
+authors = ["Danny McClanahan <dmcC2@hypnicjerk.ai>"]
+license = "MIT OR Apache-2.0"
+
+keywords                = []
+categories              = []
+homepage                = "https://github.com/cosmicexplorer/minimal-lock-free-stack"
+repository              = "https://github.com/cosmicexplorer/minimal-lock-free-stack"
+
+edition = "2021"
+
+
+[dependencies]
+# ointers = { git = "https://github.com/cosmicexplorer/ointers", rev = "1961f75bbb9818d72f59a3601997bf8a34952005" }
+ointers = { path = "/home/cosmicexplorer/tools/ointers" }
