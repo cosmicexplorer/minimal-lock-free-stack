@@ -95,6 +95,8 @@ pub fn is_lock_free() -> bool {
   AtomicKey::is_lock_free()
 }
 
+/* Align to 512 to decrease false sharing. */
+#[repr(C, align(512))]
 struct Node<T> {
   pub value: mem::ManuallyDrop<T>,
   pub next: *mut Node<T>,
