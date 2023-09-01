@@ -66,21 +66,21 @@ impl<T> PairedPointer<T> {
 
 cfg_if! {
   if #[cfg(target_pointer_width = "64")] {
-    use portable_atomic::AtomicU128;
-
-    pub type AtomicKey = AtomicU128;
+    pub type AtomicKey = portable_atomic::AtomicU128;
     pub type Key = u128;
+    pub const HAS_WIDE_ATOMIC: bool = true;
+    assert_eq_size!(PairedPointer<u8>, Key);
   } else if #[cfg(target_pointer_width = "32")] {
-    use portable_atomic::AtomicU64;
-
-    pub type AtomicKey = AtomicU64;
+    pub type AtomicKey = portable_atomic::AtomicU64;
     pub type Key = u64;
+    pub const HAS_WIDE_ATOMIC: bool = true;
+    assert_eq_size!(PairedPointer<u8>, Key);
   } else {
-    compile_error!("unsupported pointer width");
+    pub type AtomicKey = portable_atomic::AtomicUsize;
+    pub type Key = usize;
+    pub const HAS_WIDE_ATOMIC: bool = false;
   }
 }
-
-assert_eq_size!(PairedPointer<u8>, Key);
 
 impl<T> PairedPointer<T> {
   pub unsafe fn from_raw(x: Key) -> Self {
@@ -200,6 +200,7 @@ mod tests {
 
   #[test]
   fn check_lock_free() {
+    assert!(HAS_WIDE_ATOMIC);
     assert!(is_lock_free());
   }
 
