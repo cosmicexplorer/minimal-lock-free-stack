@@ -43,16 +43,40 @@
 #![allow(clippy::new_without_default, clippy::new_ret_no_self)]
 
 use cfg_if::cfg_if;
+use portable_atomic::AtomicPtr;
 use static_assertions::assert_eq_size;
 
 use std::mem;
+#[cfg(test)]
+use std::{cmp, sync::atomic::Ordering};
 
-#[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
-#[repr(C, packed)]
+#[derive(Debug)]
+#[repr(C)]
 pub struct PairedPointer<T> {
-  pub data: *mut T,
+  pub data: AtomicPtr<T>,
   pub counter: usize,
 }
+
+#[cfg(test)]
+impl<T: Clone> Clone for PairedPointer<T> {
+  fn clone(&self) -> Self {
+    Self {
+      data: AtomicPtr::new(self.data.load(Ordering::Acquire)),
+      counter: self.counter,
+    }
+  }
+}
+
+#[cfg(test)]
+impl<T: cmp::PartialEq> cmp::PartialEq for PairedPointer<T> {
+  fn eq(&self, other: &Self) -> bool {
+    self.data.load(Ordering::Acquire) == other.data.load(Ordering::Acquire)
+      && self.counter == other.counter
+  }
+}
+
+#[cfg(test)]
+impl<T: cmp::Eq> cmp::Eq for PairedPointer<T> {}
 
 cfg_if! {
   if #[cfg(target_pointer_width = "64")] {
@@ -82,6 +106,8 @@ impl<T> PairedPointer<T> {
   }
 }
 
+/* pub struct Stack<T> {} */
+
 #[cfg(test)]
 mod tests {
   use super::*;
@@ -89,17 +115,18 @@ mod tests {
   use std::ptr;
 
   #[test]
-  fn check_u128() {
+  fn check_lock_free() {
+    assert!(AtomicPtr::<u8>::is_lock_free());
     assert!(AtomicU128::is_lock_free());
   }
 
   #[test]
   fn try_round_trip() {
     let x: PairedPointer<u8> = PairedPointer {
-      data: ptr::null_mut(),
+      data: AtomicPtr::<u8>::new(ptr::null_mut()),
       counter: 3,
     };
-    let y = unsafe { PairedPointer::from_raw(x.into_raw()) };
+    let y: PairedPointer<u8> = unsafe { PairedPointer::from_raw(x.clone().into_raw()) };
     assert_eq!(x, y);
   }
 }
