@@ -16,3 +16,7 @@ edition                 = "2021"
 cfg-if                  = "1"
 portable-atomic         = { version = "1", features = ["require-cas"] }
 static_assertions       = "1"
+
+[features]
+default = []
+std = ["portable-atomic/std"]

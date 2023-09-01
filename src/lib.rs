@@ -109,6 +109,7 @@ impl<T> Node<T> {
   }
 }
 
+#[derive(Debug)]
 pub struct Stack<T> {
   top: AtomicKey,
   _phantom: PhantomData<T>,
