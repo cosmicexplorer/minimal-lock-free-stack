@@ -43,8 +43,6 @@
 #![allow(clippy::new_without_default, clippy::new_ret_no_self)]
 
 use cfg_if::cfg_if;
-use portable_atomic::AtomicPtr;
-use static_assertions::assert_eq_size;
 
 use std::{marker::PhantomData, mem, ptr, sync::atomic::Ordering};
 
@@ -69,12 +67,12 @@ cfg_if! {
     pub type AtomicKey = portable_atomic::AtomicU128;
     pub type Key = u128;
     pub const HAS_WIDE_ATOMIC: bool = true;
-    assert_eq_size!(PairedPointer<u8>, Key);
+    static_assertions::assert_eq_size!(PairedPointer<u8>, Key);
   } else if #[cfg(target_pointer_width = "32")] {
     pub type AtomicKey = portable_atomic::AtomicU64;
     pub type Key = u64;
     pub const HAS_WIDE_ATOMIC: bool = true;
-    assert_eq_size!(PairedPointer<u8>, Key);
+    static_assertions::assert_eq_size!(PairedPointer<u8>, Key);
   } else {
     /* TODO: what other pointer widths are used by platforms that support lock-free atomics? */
     pub type AtomicKey = portable_atomic::AtomicUsize;
@@ -94,7 +92,7 @@ impl<T> PairedPointer<T> {
 }
 
 pub fn is_lock_free() -> bool {
-  AtomicPtr::<u8>::is_lock_free() && AtomicKey::is_lock_free()
+  AtomicKey::is_lock_free()
 }
 
 struct Node<T> {
