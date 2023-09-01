@@ -106,6 +106,10 @@ impl<T> PairedPointer<T> {
   }
 }
 
+pub fn is_lock_free() -> bool {
+  AtomicPtr::<u8>::is_lock_free() && AtomicKey::is_lock_free()
+}
+
 /* pub struct Stack<T> {} */
 
 #[cfg(test)]
@@ -116,8 +120,7 @@ mod tests {
 
   #[test]
   fn check_lock_free() {
-    assert!(AtomicPtr::<u8>::is_lock_free());
-    assert!(AtomicU128::is_lock_free());
+    assert!(is_lock_free());
   }
 
   #[test]
