@@ -76,6 +76,7 @@ cfg_if! {
     pub const HAS_WIDE_ATOMIC: bool = true;
     assert_eq_size!(PairedPointer<u8>, Key);
   } else {
+    /* TODO: what other pointer widths are used by platforms that support lock-free atomics? */
     pub type AtomicKey = portable_atomic::AtomicUsize;
     pub type Key = usize;
     pub const HAS_WIDE_ATOMIC: bool = false;
