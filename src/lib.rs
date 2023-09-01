@@ -49,7 +49,7 @@ use static_assertions::assert_eq_size;
 use std::{marker::PhantomData, mem, ptr, sync::atomic::Ordering};
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
-#[repr(C)]
+#[repr(C, packed)]
 pub(crate) struct PairedPointer<T> {
   pub data: *mut T,
   pub counter: usize,
