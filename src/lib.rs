@@ -134,19 +134,17 @@ impl<T> Stack<T> {
         data: target,
         counter: 0,
       };
-      let new_top = new_top.into_raw();
-      match self.top.compare_exchange_weak(
-        /* FIXME: individual nodes shouldn't have atomic pointers, just the stack itself!! */
-        (*target).next,
-        new_top,
-        Ordering::Release,
-        Ordering::Relaxed,
-      ) {
+      let new_top = unsafe { new_top.into_raw() };
+      let cur_next = unsafe { &(*target).next }.load(Ordering::Acquire);
+      match self
+        .top
+        .compare_exchange_weak(cur_next, new_top, Ordering::Release, Ordering::Relaxed)
+      {
         Ok(_) => {
           break;
         },
         Err(new_top) => {
-          (*target).next = new_top;
+          unsafe { &(*target).next }.store(new_top, Ordering::Release);
         },
       }
     }
@@ -160,7 +158,7 @@ impl<T> Stack<T> {
       let mut top_ptr = ptr::NonNull::new(top_ptr.data)?;
       let next = unsafe { &top_ptr.as_ref().next };
       /* FIXME: ordering??? */
-      let next = next.load(Ordering::Relaxed);
+      let next = next.load(Ordering::Acquire);
 
       match self
         .top
@@ -199,5 +197,14 @@ mod tests {
     };
     let y: PairedPointer<u8> = unsafe { PairedPointer::from_raw(x.clone().into_raw()) };
     assert_eq!(x, y);
+  }
+
+  #[test]
+  fn push_pop() {
+    let x: Stack<u8> = Stack::new();
+    assert_eq!(x.pop(), None);
+    x.push(1);
+    assert_eq!(x.pop(), Some(1));
+    assert_eq!(x.pop(), None);
   }
 }
