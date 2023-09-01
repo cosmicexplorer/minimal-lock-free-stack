@@ -42,24 +42,64 @@
 /* Default isn't as big a deal as people seem to think it is. */
 #![allow(clippy::new_without_default, clippy::new_ret_no_self)]
 
-use portable_atomic::AtomicU128;
+use cfg_if::cfg_if;
+use static_assertions::assert_eq_size;
 
-pub fn add(left: usize, right: usize) -> usize {
-  left + right
+use std::mem;
+
+#[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
+#[repr(C, packed)]
+pub struct PairedPointer<T> {
+  pub data: *mut T,
+  pub counter: usize,
+}
+
+cfg_if! {
+  if #[cfg(target_pointer_width = "64")] {
+    use portable_atomic::AtomicU128;
+
+    pub type AtomicKey = AtomicU128;
+    pub type Key = u128;
+  } else if #[cfg(target_pointer_width = "32")] {
+    use portable_atomic::AtomicU64;
+
+    pub type AtomicKey = AtomicU64;
+    pub type Key = u64;
+  } else {
+    compile_error!("unsupported pointer width");
+  }
+}
+
+assert_eq_size!(PairedPointer<u8>, Key);
+
+impl<T> PairedPointer<T> {
+  pub unsafe fn from_raw(x: Key) -> Self {
+    mem::transmute(x)
+  }
+
+  pub unsafe fn into_raw(self) -> Key {
+    mem::transmute(self)
+  }
 }
 
 #[cfg(test)]
 mod tests {
   use super::*;
 
-  #[test]
-  fn it_works() {
-    let result = add(2, 2);
-    assert_eq!(result, 4);
-  }
+  use std::ptr;
 
   #[test]
   fn check_u128() {
     assert!(AtomicU128::is_lock_free());
+  }
+
+  #[test]
+  fn try_round_trip() {
+    let x: PairedPointer<u8> = PairedPointer {
+      data: ptr::null_mut(),
+      counter: 3,
+    };
+    let y = unsafe { PairedPointer::from_raw(x.into_raw()) };
+    assert_eq!(x, y);
   }
 }
