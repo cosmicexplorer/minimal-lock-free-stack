@@ -46,37 +46,23 @@ use cfg_if::cfg_if;
 use portable_atomic::AtomicPtr;
 use static_assertions::assert_eq_size;
 
-use std::mem;
-#[cfg(test)]
-use std::{cmp, sync::atomic::Ordering};
+use std::{marker::PhantomData, mem, ptr, sync::atomic::Ordering};
 
-#[derive(Debug)]
+#[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
 #[repr(C)]
-pub struct PairedPointer<T> {
-  pub data: AtomicPtr<T>,
+pub(crate) struct PairedPointer<T> {
+  pub data: *mut T,
   pub counter: usize,
 }
 
-#[cfg(test)]
-impl<T: Clone> Clone for PairedPointer<T> {
-  fn clone(&self) -> Self {
+impl<T> PairedPointer<T> {
+  pub fn new() -> Self {
     Self {
-      data: AtomicPtr::new(self.data.load(Ordering::Acquire)),
-      counter: self.counter,
+      data: ptr::null_mut(),
+      counter: 0,
     }
   }
 }
-
-#[cfg(test)]
-impl<T: cmp::PartialEq> cmp::PartialEq for PairedPointer<T> {
-  fn eq(&self, other: &Self) -> bool {
-    self.data.load(Ordering::Acquire) == other.data.load(Ordering::Acquire)
-      && self.counter == other.counter
-  }
-}
-
-#[cfg(test)]
-impl<T: cmp::Eq> cmp::Eq for PairedPointer<T> {}
 
 cfg_if! {
   if #[cfg(target_pointer_width = "64")] {
@@ -110,7 +96,89 @@ pub fn is_lock_free() -> bool {
   AtomicPtr::<u8>::is_lock_free() && AtomicKey::is_lock_free()
 }
 
-/* pub struct Stack<T> {} */
+struct Node<T> {
+  value: mem::ManuallyDrop<T>,
+  /* next: Option<PairedPointer<Node<T>>>, */
+  next: AtomicKey,
+}
+
+impl<T> Node<T> {
+  pub fn new(value: T, next: Key) -> Self {
+    Self {
+      value: mem::ManuallyDrop::new(value),
+      next: AtomicKey::new(next),
+    }
+  }
+}
+
+pub struct Stack<T> {
+  top: AtomicKey,
+  _phantom: PhantomData<T>,
+}
+
+impl<T> Stack<T> {
+  pub fn new() -> Self {
+    let p = PairedPointer::<Node<T>>::new();
+    Self {
+      top: AtomicKey::new(unsafe { p.into_raw() }),
+      _phantom: PhantomData,
+    }
+  }
+
+  pub fn push(&self, x: T) {
+    let target = Box::new(Node::new(x, self.top.load(Ordering::Acquire)));
+    let target = Box::into_raw(target);
+
+    loop {
+      let new_top: PairedPointer<Node<T>> = PairedPointer {
+        data: target,
+        counter: 0,
+      };
+      let new_top = new_top.into_raw();
+      match self.top.compare_exchange_weak(
+        /* FIXME: individual nodes shouldn't have atomic pointers, just the stack itself!! */
+        (*target).next,
+        new_top,
+        Ordering::Release,
+        Ordering::Relaxed,
+      ) {
+        Ok(_) => {
+          break;
+        },
+        Err(new_top) => {
+          (*target).next = new_top;
+        },
+      }
+    }
+  }
+
+  pub fn pop(&self) -> Option<T> {
+    let mut top = self.top.load(Ordering::Acquire);
+
+    loop {
+      let top_ptr = unsafe { PairedPointer::<Node<T>>::from_raw(top) };
+      let mut top_ptr = ptr::NonNull::new(top_ptr.data)?;
+      let next = unsafe { &top_ptr.as_ref().next };
+      /* FIXME: ordering??? */
+      let next = next.load(Ordering::Relaxed);
+
+      match self
+        .top
+        .compare_exchange_weak(top, next, Ordering::AcqRel, Ordering::Acquire)
+      {
+        Ok(_) => {
+          /* NB: Box will get dropped, without dropping the T since it's ManuallyDrop. */
+          let mut top_box: Box<Node<T>> = unsafe { Box::from_raw(top_ptr.as_mut()) };
+          let val: T = unsafe { mem::ManuallyDrop::take(&mut top_box.value) };
+          break Some(val);
+        },
+        Err(new_top) => {
+          top = new_top;
+        },
+      }
+    }
+  }
+}
 
 #[cfg(test)]
 mod tests {
@@ -126,7 +194,7 @@ mod tests {
   #[test]
   fn try_round_trip() {
     let x: PairedPointer<u8> = PairedPointer {
-      data: AtomicPtr::<u8>::new(ptr::null_mut()),
+      data: ptr::null_mut(),
       counter: 3,
     };
     let y: PairedPointer<u8> = unsafe { PairedPointer::from_raw(x.clone().into_raw()) };
