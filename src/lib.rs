@@ -97,16 +97,15 @@ pub fn is_lock_free() -> bool {
 }
 
 struct Node<T> {
-  value: mem::ManuallyDrop<T>,
-  /* next: Option<PairedPointer<Node<T>>>, */
-  next: AtomicKey,
+  pub value: mem::ManuallyDrop<T>,
+  pub next: *mut Node<T>,
 }
 
 impl<T> Node<T> {
-  pub fn new(value: T, next: Key) -> Self {
+  pub fn for_value(value: T) -> Self {
     Self {
       value: mem::ManuallyDrop::new(value),
-      next: AtomicKey::new(next),
+      next: ptr::null_mut(),
     }
   }
 }
@@ -126,43 +125,58 @@ impl<T> Stack<T> {
   }
 
   pub fn push(&self, x: T) {
-    let target = Box::new(Node::new(x, self.top.load(Ordering::Acquire)));
-    let target = Box::into_raw(target);
+    let mut cur_top: Key = self.top.load(Ordering::Acquire);
+    let target: *mut Node<T> = Box::into_raw(Box::new(Node::for_value(x)));
 
     loop {
-      let new_top: PairedPointer<Node<T>> = PairedPointer {
-        data: target,
-        counter: 0,
+      let new_top: Key = {
+        let PairedPointer { data, counter } =
+          unsafe { PairedPointer::<Node<T>>::from_raw(cur_top) };
+        unsafe {
+          (*target).next = data;
+        }
+        let new_top: PairedPointer<Node<T>> = PairedPointer {
+          data: target,
+          counter: counter.wrapping_add(1),
+        };
+        unsafe { new_top.into_raw() }
       };
-      let new_top = unsafe { new_top.into_raw() };
-      let cur_next = unsafe { &(*target).next }.load(Ordering::Acquire);
+
       match self
         .top
-        .compare_exchange_weak(cur_next, new_top, Ordering::Release, Ordering::Relaxed)
+        .compare_exchange_weak(cur_top, new_top, Ordering::Release, Ordering::Relaxed)
       {
         Ok(_) => {
           break;
         },
-        Err(new_top) => {
-          unsafe { &(*target).next }.store(new_top, Ordering::Release);
+        Err(external_cur_top) => {
+          cur_top = external_cur_top;
         },
       }
     }
   }
 
   pub fn pop(&self) -> Option<T> {
-    let mut top = self.top.load(Ordering::Acquire);
+    let mut cur_top: Key = self.top.load(Ordering::Acquire);
 
     loop {
-      let top_ptr = unsafe { PairedPointer::<Node<T>>::from_raw(top) };
-      let mut top_ptr = ptr::NonNull::new(top_ptr.data)?;
-      let next = unsafe { &top_ptr.as_ref().next };
-      /* FIXME: ordering??? */
-      let next = next.load(Ordering::Acquire);
+      let (new_top, mut top_ptr): (Key, ptr::NonNull<Node<T>>) = {
+        let PairedPointer { data, counter } =
+          unsafe { PairedPointer::<Node<T>>::from_raw(cur_top) };
+
+        let mut top_ptr: ptr::NonNull<Node<T>> = ptr::NonNull::new(data)?;
+
+        let new_top: PairedPointer<Node<T>> = PairedPointer {
+          data: unsafe { top_ptr.as_mut().next },
+          counter: counter.wrapping_add(1),
+        };
+        let new_top = unsafe { new_top.into_raw() };
+        (new_top, top_ptr)
+      };
 
       match self
         .top
-        .compare_exchange_weak(top, next, Ordering::AcqRel, Ordering::Acquire)
+        .compare_exchange_weak(cur_top, new_top, Ordering::AcqRel, Ordering::Acquire)
       {
         Ok(_) => {
           /* NB: Box will get dropped, without dropping the T since it's ManuallyDrop. */
@@ -170,8 +184,8 @@ impl<T> Stack<T> {
           let val: T = unsafe { mem::ManuallyDrop::take(&mut top_box.value) };
           break Some(val);
         },
-        Err(new_top) => {
-          top = new_top;
+        Err(external_cur_top) => {
+          cur_top = external_cur_top;
         },
       }
     }
